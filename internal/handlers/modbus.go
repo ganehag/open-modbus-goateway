@@ -88,6 +88,7 @@ func parseRequest(payload string) (*ModbusRequest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid REGISTER_NUMBER value: %v", err)
 	}
+	registerAddress -= 1 // Requests uses RegisterNumbers
 
 	registerCount := uint16(0)
 	data := []uint16{}
