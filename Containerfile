@@ -1,5 +1,5 @@
 # Stage 1: Build the Go application
-FROM golang:1.23 as build
+FROM docker.io/golang:1.23 AS build
 
 # Set the working directory
 WORKDIR /go/src/app
