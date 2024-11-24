@@ -18,13 +18,13 @@ type Topic struct {
 // ParseTopic parses a topic string based on a format string with placeholders like `{device}`.
 // It returns a Topic instance containing the parsed values.
 func ParseTopic(topic, format string) (*Topic, error) {
-	// Check for $share/<group> prefix
-	if strings.HasPrefix(topic, "$share/") {
-		parts := strings.SplitN(topic, "/", 3) // Split into $share, <group>, and the rest
+	// Check for $share/<group> prefix in format
+	if strings.HasPrefix(format, "$share/") {
+		parts := strings.SplitN(format, "/", 3) // Split into $share, <group>, and the rest
 		if len(parts) < 3 {
-			return nil, fmt.Errorf("invalid shared subscription topic: %q", topic)
+			return nil, fmt.Errorf("invalid shared subscription format: %q", format)
 		}
-		topic = parts[2] // Use the part after $share/<group>
+		format = parts[2] // Use the part after $share/<group>
 	}
 
 	topicParts := strings.Split(topic, "/")
