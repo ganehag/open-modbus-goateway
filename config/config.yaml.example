@@ -1,0 +1,10 @@
+mqtt:
+  broker: "ssl://test.mosquitto.org:8886"
+  client_id: "open-modbus-goateway"
+  username: ""
+  password: ""
+  request_topic: "modbus/{device}/request"
+  response_topic: "modbus/{device}/response"
+  ca_cert_path: ""
+  cert_path: ""
+  key_path: ""
