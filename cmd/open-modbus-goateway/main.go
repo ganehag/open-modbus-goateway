@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -23,6 +24,9 @@ func main() {
 	// Create the Modbus handler
 	handler := &handlers.ModbusHandler{}
 
+	// Create the Dummy handler
+	// handler := &handlers.DummyHandler{}
+
 	// Define the number of workers
 	workerCount := 4 // Adjust this based on expected load and available resources
 
@@ -32,8 +36,11 @@ func main() {
 		log.Fatalf("Failed to initialize MQTT client: %v", err)
 	}
 
+	// Create a context to manage shutdown signals
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Start workers
-	client.StartWorkers()
+	client.StartWorkers(ctx)
 
 	log.Println("Open Modbus Goateway is running. Waiting for messages...")
 
@@ -44,6 +51,9 @@ func main() {
 	// Wait for termination signal
 	<-signalChan
 	log.Println("Received termination signal. Shutting down...")
+
+	// Cancel the context to stop workers
+	cancel()
 
 	// Stop the client
 	client.Stop()

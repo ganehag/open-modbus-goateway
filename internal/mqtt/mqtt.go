@@ -21,6 +21,11 @@ func convertToWildcard(topic string) string {
 	return strings.ReplaceAll(topic, "{device}", "+")
 }
 
+type ResponseMessage struct {
+	Topic   string
+	Payload []byte
+}
+
 // Client wraps the MQTT client, configuration, and worker pool
 type Client struct {
 	mqttClient     mqtt.Client
@@ -28,6 +33,7 @@ type Client struct {
 	handler        handlers.Handler
 	workers        int
 	messageCh      chan mqtt.Message
+	responseCh     chan ResponseMessage
 	wg             sync.WaitGroup
 	requestCounter int32
 	ctx            context.Context    // Context for managing client lifecycle
@@ -52,6 +58,7 @@ func NewClient(cfg config.MQTTConfig, handler handlers.Handler, workers int) (*C
 
 	// Initialize message channel
 	messageCh := make(chan mqtt.Message, workers*10) // Buffered channel for better throughput
+	responseCh := make(chan ResponseMessage, workers*10)
 
 	opts := mqtt.NewClientOptions().
 		AddBroker(cfg.Broker).
@@ -113,6 +120,7 @@ func NewClient(cfg config.MQTTConfig, handler handlers.Handler, workers int) (*C
 		handler:    handler,
 		workers:    workers,
 		messageCh:  messageCh,
+		responseCh: responseCh,
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
 	}
@@ -124,17 +132,28 @@ func NewClient(cfg config.MQTTConfig, handler handlers.Handler, workers int) (*C
 		c.startRequestCounterLogger()
 	}()
 
+	go c.processResponse(ctx)
+
 	return c, nil
 }
 
 // startWorkers starts a pool of goroutines to process messages concurrently
-func (c *Client) StartWorkers() {
+func (c *Client) StartWorkers(ctx context.Context) {
 	for i := 0; i < c.workers; i++ {
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
-			for msg := range c.messageCh {
-				c.processMessage(msg)
+			for {
+				select {
+				case <-ctx.Done():
+					fmt.Println("Worker stopped")
+					return // Exit worker on context cancellation
+				case msg, ok := <-c.messageCh:
+					if !ok {
+						return // Exit worker if channel is closed
+					}
+					c.processRequest(msg)
+				}
 			}
 		}()
 	}
@@ -179,9 +198,25 @@ func (c *Client) startRequestCounterLogger() {
 	}
 }
 
-func (c *Client) processMessage(msg mqtt.Message) {
-	// Increment the counter atomically
-	atomic.AddInt32(&c.requestCounter, 1)
+func (c *Client) processResponse(ctx context.Context) {
+	for {
+		select {
+		case <-c.ctx.Done(): // Context canceled
+			return
+		case msg := <-c.responseCh:
+			// Increment the counter atomically
+			atomic.AddInt32(&c.requestCounter, 1)
+
+			token := c.mqttClient.Publish(msg.Topic, 0, false, msg.Payload)
+			token.Wait()
+			if token.Error() != nil {
+				log.Printf("Failed to publish response to topic %s: %v", msg.Topic, token.Error())
+			}
+		}
+	}
+}
+
+func (c *Client) processRequest(msg mqtt.Message) {
 
 	// Parse the incoming topic
 	requestTopic, err := ParseTopic(msg.Topic(), c.cfg.RequestTopic)
@@ -204,10 +239,10 @@ func (c *Client) processMessage(msg mqtt.Message) {
 		return
 	}
 
-	// Publish the response
-	token := c.mqttClient.Publish(responseTopicString, 1, false, responsePayload)
-	token.Wait()
-	if token.Error() != nil {
-		log.Printf("Failed to publish response to topic %s: %v", responseTopicString, token.Error())
+	responseMessage := ResponseMessage{
+		Topic:   responseTopicString,
+		Payload: []byte(responsePayload),
 	}
+
+	c.responseCh <- responseMessage
 }
